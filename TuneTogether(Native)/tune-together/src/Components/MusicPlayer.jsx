@@ -95,7 +95,7 @@ const MusicPlayer = ({ roomCode }) => {
   return (
     <div className="music-player">
       <div className="music-info">
-        <img src="../src/imgs/album-leo2.jpg" alt="Album Art" className="album-art" /> 
+        <img src="https://static.vecteezy.com/system/resources/previews/010/891/456/original/music-note-illustration-melody-symbol-musical-design-icon-and-abstract-sound-treble-art-song-tune-element-composition-isolated-white-and-black-graphic-sign-silhouette-classical-opera-shape-free-vector.jpg" alt="Album Art" className="album-art" /> 
         <div className="track-info">
           <h2>{tracks[currentTrackIndex]?.title}</h2>
           <p>{tracks[currentTrackIndex]?.artist}</p>

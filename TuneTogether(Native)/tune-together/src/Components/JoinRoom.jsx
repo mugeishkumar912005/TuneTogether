@@ -1,45 +1,33 @@
-import React, { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import io from 'socket.io-client';
-import ChatBox from './ChatBox';
-import VotePoll from './VotePoll';
-import MusicPlayer from './MusicPlayer';
+import React, { useState, useEffect } from "react";
+import io from "socket.io-client";
 
-const JoinRoom = () => {
-  const { state } = useLocation();
-  const { username, roomId } = state || {};  
-  const [messages, setMessages] = useState([]);
-  const socket = io("http://localhost:5900");
+const JoinedRoom = ({ roomId, username }) => {
+  const [participants, setParticipants] = useState([]);
 
   useEffect(() => {
-    socket.on("chat message", (data) => {
-      setMessages((prevMessages) => [...prevMessages, data]);
+    const socket = io("http://localhost:5900");
+    socket.emit("join room", roomId);
+
+    socket.on("userJoined", (username) => {
+      setParticipants((prevParticipants) => [...prevParticipants, username]);
     });
 
     return () => {
       socket.disconnect();
     };
-  }, []); // Empty dependency array ensures the effect runs only once
-
-  const handleSendMessage = (message) => {
-    const msg = { sender: username, text: message, timestamp: new Date() };
-    socket.emit("chat message", msg);
-    setMessages((prevMessages) => [...prevMessages, msg]);
-  };
+  }, [roomId]);
 
   return (
-    <div className="joinroom-container">
-      <div className="joinroom-nav">
-        <h1>Tune Together</h1>
-        <div className="roomcode">Room Code: {roomId}</div>
-      </div>
-      <div className="joinroom-subcontainer">
-        <VotePoll/>
-        <MusicPlayer/>
-        <ChatBox messages={messages} onSendMessage={handleSendMessage} />
-      </div>
+    <div className="joined-room-container">
+      <h1>Room: {roomId}</h1>
+      <h2>Participants:</h2>
+      <ul>
+        {participants.map((participant, index) => (
+          <li key={index}>{participant}</li>
+        ))}
+      </ul>
     </div>
   );
 };
 
-export default JoinRoom;
+export default JoinedRoom;

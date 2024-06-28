@@ -1,13 +1,29 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import Cookies from "js-cookie";
+import io from "socket.io-client";
+import ChatBox from "./ChatBox"; // Import ChatBox component
 
 const MainPage = () => {
   const [showPopup, setShowPopup] = useState(false);
   const [name, setName] = useState("");
   const [enteredName, setEnteredName] = useState("");
   const [code, setRoomCode] = useState("");
+  const [generatedCode, setGeneratedCode] = useState("");
   const navigate = useNavigate();
+  const [socket, setSocket] = useState(null);
+
+  const getAuthToken = () => {
+    return Cookies.get("authToken");
+  };
+
+  useEffect(() => {
+    const newSocket = io("http://localhost:5900");
+    setSocket(newSocket);
+
+    return () => newSocket.close();
+  }, []);
 
   const handleJoinClick = () => {
     setShowPopup(true);
@@ -15,20 +31,27 @@ const MainPage = () => {
 
   const handlePopupClose = async () => {
     try {
-      const response = await axios.post("http://localhost:5900/verifycode", {
-        code,
-        name,
-      });
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error("Authentication token is missing");
+      }
+  
+      const response = await axios.post(
+        "http://localhost:5900/verifycode",
+        { code, name },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       const data = response.data;
       if (response.status === 200) {
-        navigate(`/JoinRoom/${data.code}`, {
+        socket.emit('join room', data.code.toString()); // Emit room code as string
+        navigate(`/CreateRoom/${data.code}`, {
           state: { username: name, roomId: data.code },
         });
       } else {
         console.log("Verification failed:", data.Msg);
       }
     } catch (error) {
-      console.error("Error verifying code:", error);
+      console.error("Error verifying code:", error.message || error);
     }
   };
 
@@ -36,14 +59,19 @@ const MainPage = () => {
     try {
       const response = await axios.post("http://localhost:5900/codegen");
       const roomCode = response.data.code;
-      setRoomCode(roomCode);
-      navigate(`/CreateRoom/${roomCode}`, {
-        state: { username: name, roomId: roomCode },
-      });
+      setGeneratedCode(roomCode);
     } catch (error) {
-      console.error("Error generating room code:", error);
+      console.error("Error generating room code:", error.message || error);
     }
   };
+
+  useEffect(() => {
+    if (generatedCode) {
+      navigate(`/CreateRoom/${generatedCode}`, {
+        state: { username: name, roomId: generatedCode }, 
+      });
+    }
+  }, [generatedCode, navigate, name]);
 
   const handleNameChange = (event) => {
     setEnteredName(event.target.value);
@@ -58,6 +86,8 @@ const MainPage = () => {
         setName(enteredName);
         setEnteredName("");
         setShowPopup(true);
+        Cookies.set("authToken", response.data.authToken, { expires: 1 });
+        fetchUsers(); // Fetch users after setting the name
       } else {
         console.error("Error storing name:", response.data.Msg);
       }
@@ -65,6 +95,19 @@ const MainPage = () => {
       console.error("Error storing name:", error);
     }
   };
+
+  const fetchUsers = async () => {
+    try {
+      const response = await axios.get("http://localhost:5900/users");
+      setUsernames(response.data.users.map((user) => user.username));
+    } catch (error) {
+      console.error("Error fetching users:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers(); // Fetch users on component mount
+  }, []);
 
   return (
     <div className="mainpage-container">
@@ -89,13 +132,17 @@ const MainPage = () => {
           )}
         </div>
       </nav>
-      <div className="btn-container">
-        <button className="join" onClick={handleJoinClick}>
-          JOIN ROOM
-        </button>
-        <button className="create" onClick={generateCode}>
-          CREATE ROOM
-        </button>
+      <div className="content-container">
+        <div className="main-content">
+          <div className="btn-container">
+            <button className="join" onClick={handleJoinClick}>
+              JOIN ROOM
+            </button>
+            <button className="create" onClick={generateCode}>
+              CREATE ROOM
+            </button>
+          </div>
+        </div>
       </div>
       {showPopup && (
         <div className="popup-overlay">
@@ -112,6 +159,9 @@ const MainPage = () => {
             </div>
           </div>
         </div>
+      )}
+      {name && code && (
+        <ChatBox roomId={code} username={name} socket={socket} />
       )}
     </div>
   );

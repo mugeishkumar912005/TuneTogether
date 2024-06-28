@@ -7,8 +7,9 @@ import MusicPlayer from './MusicPlayer';
 
 const CreateRoom = () => {
   const location = useLocation();
-  const { username, roomId } = location.state || {};  
+  const { username, roomId } = location.state || {};
   const [messages, setMessages] = useState([]);
+  const [users, setUsers] = useState([]);
   const socket = io("http://localhost:5900");
 
   useEffect(() => {
@@ -18,6 +19,10 @@ const CreateRoom = () => {
 
     socket.on("chat message", (data) => {
       setMessages((prevMessages) => [...prevMessages, data]);
+    });
+
+    socket.on("users updated", (updatedUsers) => {
+      setUsers(updatedUsers);
     });
 
     return () => {
@@ -35,10 +40,10 @@ const CreateRoom = () => {
     <div className="joinroom-container">
       <div className="joinroom-nav">
         <h1>Tune Together</h1>
-        <div className="roomcode">Room Code: {roomId || 'Loading...'}</div> 
+        <div className="roomcode">Room Code: {roomId || 'Loading...'}</div>
       </div>
       <div className="joinroom-subcontainer">
-        <VotePoll />
+        <VotePoll usernames={users} name={username} />
         <MusicPlayer />
         <ChatBox messages={messages} onSendMessage={handleSendMessage} />
       </div>

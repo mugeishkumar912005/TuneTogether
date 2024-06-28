@@ -1,9 +1,12 @@
-import { io } from "socket.io-client";
-const socket = io("http://localhost:5900", {
-  withCredentials: true,
-  extraHeaders: {
-    "my-custom-header": "abcd"
-  }
-});
+import React from 'react';
+import io from 'socket.io-client';
+import ChatBox from './ChatBox'; 
+const socket = io('http://localhost:5900');
 
-export default socket;
+function soc() {
+  return (
+    <ChatBox roomId="your-room-id" username="your-username" socket={socket} />
+  );
+}
+
+export default soc;

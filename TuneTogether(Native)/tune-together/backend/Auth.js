@@ -7,10 +7,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const MsgSchema = require('./schemaMsg.js');
 const ConvoSchema = require('./schemaConvo.js');
-const generateToken = require('./jwt.js');
-const protectRoute = require('./protectroute.js');
 const JWT = require('jsonwebtoken');
-const moment = require('moment');
 const { UserSchema } = require('./names.js');
 
 const app = express();
@@ -23,7 +20,6 @@ const io = socketIo(server, {
     credentials: true,
   },
 });
-
 
 app.use(bodyParser.json());
 app.use(cors({
@@ -41,26 +37,38 @@ const Convo = mongoose.model('Convo', ConvoSchema);
 
 const dbConnection = async () => {
   try {
-    await mongoose.connect('mongodb+srv://kmugeis2005:dontforgetit@mugeishhero.ggr3iod.mongodb.net/Tune?retryWrites=true&w=majority&AppName=mugeishhero');
+    await mongoose.connect('mongodb+srv://kmugeis2005:dontforgetit@mugeishhero.ggr3iod.mongodb.net/Tune?retryWrites=true&w=majority&AppName=mugeishhero', {
+    });
     console.log('DB Connection Success');
   } catch (error) {
     console.error('Oops! Server Error:', error);
   }
 };
-app.post('/codegen', protectRoute, async (request, response) => {
+
+app.post('/codegen', async (req, res) => {
   try {
     let code = generateUniqueCode();
     const existingCode = await Code.findOne({ code });
     if (existingCode) {
-      return response.status(409).json({ Msg: 'Duplicate room code detected' });
+      return res.status(409).json({ Msg: 'Duplicate room code detected' });
     }
     await Code.create({ code });
-    return response.status(200).json({ Msg: 'Success', code });
+    return res.status(200).json({ Msg: 'Success', code });
   } catch (error) {
     console.error('Error:', error);
-    return response.status(500).json({ Msg: 'Server Error' });
+    return res.status(500).json({ Msg: 'Server Error' });
   }
 });
+app.get('/users', async (req, res) => {
+  try {
+    const users = await Name.find(); // Corrected to use Name model
+    return res.status(200).json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 
 function generateUniqueCode() {
   let code = '';
@@ -70,109 +78,146 @@ function generateUniqueCode() {
   return code;
 }
 
-app.post('/verifycode', async (request, response) => {
+app.post('/verifycode', async (req, res) => {
   try {
-    const { code } = request.body;
-    
+    const { code } = req.body;
     if (typeof code !== 'string' || code.length !== 6) {
-      return response.status(400).json({ Msg: 'Invalid room code length.' });
+      return res.status(400).json({ Msg: 'Invalid room code length.' });
     }
-
     const foundRoom = await Code.findOne({ code: code.toString() });
     if (!foundRoom) {
-      return response.status(404).json({ Msg: 'Room not found. Please create one.' });
+      return res.status(404).json({ Msg: 'Room not found. Please create one.' });
     }
-
-    const token = JWT.sign({ code }, "Y+88p4NldTYqVNWLSVKODcprx0g59PackkQWqGwxow0=", { expiresIn: '24h' });
-    response.cookie('JWT', token, {
+    const token = JWT.sign({ code }, "your_jwt_secret", { expiresIn: '24h' });
+    res.cookie('JWT', token, {
       maxAge: 24 * 60 * 60 * 1000,
       httpOnly: true,
       sameSite: 'strict',
     });
-
     io.emit('room created', code);
-    return response.status(200).json({ Msg: 'Match Found', token });
+    return res.status(200).json({ Msg: 'Match Found', code });
   } catch (error) {
     console.error('Server Error:', error);
-    return response.status(500).json({ Msg: 'Server Error' });
+    return res.status(500).json({ Msg: 'Server Error' });
   }
 });
 
-app.post('/createUser', async (request, response) => {
+app.post('/createUser', async (req, res) => {
   try {
-    const { username } = request.body;
+    const { username } = req.body;
     if (!username) {
-      return response.status(400).json({ Msg: 'Username is required.' });
+      return res.status(400).json({ Msg: 'Username is required.' });
     }
     const existingUser = await Name.findOne({ username });
     if (existingUser) {
-      return response.status(409).json({ Msg: 'Username already exists.' });
+      return res.status(409).json({ Msg: 'Username already exists.' });
     }
     const newUser = await Name.create({ username });
-    return response.status(200).json({ Msg: 'User created successfully.', username: newUser.username });
+    const token = JWT.sign({ username }, "your_jwt_secret", { expiresIn: '24h' });
+    return res.status(200).json({ Msg: 'User created successfully.', username: newUser.username, authToken: token });
   } catch (error) {
     console.error('Error creating user:', error);
-    return response.status(500).json({ Msg: 'Server Error' });
+    return res.status(500).json({ Msg: 'Server Error' });
   }
 });
 
-app.post('/MsgSend/:roomId', async (request, response) => {
+app.post('/MsgSend/:roomId', async (req, res) => {
   try {
-    const { Msg: messageText, senderName } = request.body;
-    const roomId = request.params.roomId;
-
+    const { Msg: messageText, senderName } = req.body;
+    const roomId = req.params.roomId;
     if (!roomId) {
-      return response.status(400).json({ error: 'Room ID is required.' });
+      return res.status(400).json({ error: 'Room ID is required.' });
     }
     if (!messageText) {
-      return response.status(400).json({ error: "'Msg' is a required field." });
+      return res.status(400).json({ error: "'Msg' is a required field." });
     }
     let conversation = await Convo.findOne({ code: roomId });
     if (!conversation) {
       conversation = await Convo.create({ code: roomId, messages: [] });
     }
     const newMsg = new Msg({ Msg: messageText, sender: senderName, roomId });
+    await newMsg.save();
     conversation.messages.push(newMsg);
     await conversation.save();
     io.to(roomId).emit('chat message', { text: messageText, sender: senderName, timestamp: new Date().toISOString() });
-
-    return response.status(201).json({ Msg: newMsg });
+    return res.status(201).json({ Msg: newMsg });
   } catch (error) {
     console.error(error);
-    return response.status(500).json({ error: 'Internal server error.' });
+    return res.status(500).json({ error: 'Internal server error.' });
   }
 });
-app.post("/recmsg/:roomId", async (request, response) => {
+
+app.post("/recmsg/:roomId", async (req, res) => {
   try {
-    const { message, username } = request.body;
-    const roomId = request.params.roomId;
+    const { message, username } = req.body;
+    const roomId = req.params.roomId;
     if (!roomId || !message || !username) {
-      return response.status(400).json({ error: "Invalid message data." });
+      return res.status(400).json({ error: "Invalid message data." });
     }
     io.to(roomId).emit("chat message", { text: message, sender: username, timestamp: new Date().toISOString() });
-
-    return response.status(200).json({ success: true });
+    return res.status(200).json({ success: true });
   } catch (error) {
     console.error(error);
-    return response.status(500).json({ error: "Internal server error." });
+    return res.status(500).json({ error: "Internal server error." });
   }
 });
-
 
 dbConnection();
 
 io.on('connection', (socket) => {
   console.log('User Connected');
-
-  socket.on('join room', (code) => {
-    socket.join(code);
-    console.log(`User joined room: ${code}`);
+  
+  socket.on('join room', async (roomId) => {
+    try {
+      const foundRoom = await Code.findOne({ code: roomId.toString() }); // Ensure roomId is a string
+      if (!foundRoom) {
+        throw new Error('Room not found');
+      }
+      socket.join(roomId.toString()); // Ensure roomId is a string when joining
+      console.log(`User ${socket.username} joined room: ${roomId}`);
+      // Emit event to update users in room
+      io.to(roomId).emit('users updated', getUsersInRoom(roomId));
+    } catch (error) {
+      console.error('Error joining room:', error);
+      socket.emit('join room error', { error: 'Room not found' });
+    }
   });
+  
+  const getUsersInRoom = (roomId) => {
+    return Array.from(io.sockets.adapter.rooms.get(roomId) || []).map(socketId => {
+      const clientSocket = io.sockets.sockets.get(socketId);
+      return clientSocket.username; 
+    });
+  };
+  
 
-  socket.on('chat message', ({ roomId, message, username }) => {
-    io.to(roomId).emit('chat message', { text: message, sender: username, timestamp: new Date().toISOString() });
-  });
-
+  const handlePopupClose = async () => {
+    try {
+      const token = getAuthToken();
+      if (!token) {
+        throw new Error("Authentication token is missing");
+      }
+  
+      const response = await axios.post(
+        "http://localhost:5900/verifycode",
+        { code, name },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = response.data;
+      if (response.status === 200) {
+        socket.emit('join room', data.code); // Emit join room event with correct roomId
+        navigate(`/CreateRoom/${data.code}`, {
+          state: { username: name, roomId: data.code },
+        });
+      } else {
+        console.log("Verification failed:", data.Msg);
+      }
+    } catch (error) {
+      console.error("Error verifying code:", error.message || error);
+    }
+  };
+  
+  
   socket.on('disconnect', () => {
     console.log('User Disconnected');
   });
